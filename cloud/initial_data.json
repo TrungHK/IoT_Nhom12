@@ -1,0 +1,49 @@
+{
+  "parking": {
+    "status": {
+      "availableSlots": 4,
+      "totalSlots": 4,
+      "slots": [
+        { "id": 1, "isOccupied": false, "distance": 120.5 },
+        { "id": 2, "isOccupied": false, "distance": 115.0 },
+        { "id": 3, "isOccupied": false, "distance": 130.2 },
+        { "id": 4, "isOccupied": false, "distance": 125.8 }
+      ],
+      "updatedAt": 1732520000000
+    },
+    "cards": {
+      "E34B192A": {
+        "uid": "E34B192A",
+        "ownerName": "Nguyễn Văn A",
+        "licensePlate": "29A-123.45",
+        "phone": "0912345678",
+        "status": "active",
+        "createdAt": 1732520000000
+      },
+      "A18C339F": {
+        "uid": "A18C339F",
+        "ownerName": "Trần Thị B",
+        "licensePlate": "30E-888.88",
+        "phone": "0987654321",
+        "status": "active",
+        "createdAt": 1732520000000
+      }
+    },
+    "logs": {
+      "-OInitSample01": {
+        "gate": "entry",
+        "uid": "E34B192A",
+        "timestamp": 1732520100000,
+        "action": "IN"
+      }
+    },
+    "commands": {
+      "barrier": {
+        "gate": "entry",
+        "action": "CLOSE",
+        "triggerAt": 1732520000000,
+        "by": "system"
+      }
+    }
+  }
+}

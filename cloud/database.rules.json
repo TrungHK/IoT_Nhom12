@@ -1,0 +1,23 @@
+{
+  "rules": {
+    "parking": {
+      "status": {
+        ".read": true,
+        ".write": "auth != null"
+      },
+      "logs": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": ["timestamp", "gate"]
+      },
+      "cards": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      "commands": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}
