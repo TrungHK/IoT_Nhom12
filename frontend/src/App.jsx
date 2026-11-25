@@ -1,41 +1,100 @@
-import React from 'react';
-import Navbar from './components/common/Navbar';
-import ParkingMap from './components/parking/ParkingMap';
-import BarrierControl from './components/parking/BarrierControl';
-import CardList from './components/rfid/CardList';
-import LogTable from './components/rfid/LogTable';
+import React, { useEffect, useState } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ParkingProvider } from './context/ParkingContext';
+import Sidebar from './components/layout/Sidebar';
+import Topbar from './components/layout/Topbar';
+import LoginPage from './pages/LoginPage';
+import OverviewPage from './pages/OverviewPage';
+import HistoryPage from './pages/HistoryPage';
+import ResidentCardsPage from './pages/ResidentCardsPage';
+import GuestCardsPage from './pages/GuestCardsPage';
+import GateOperationsPage from './pages/GateOperationsPage';
+import DevicesPage from './pages/DevicesPage';
+import ReportsPage from './pages/ReportsPage';
+import AccountsPage from './pages/AccountsPage';
+import PermissionsPage from './pages/PermissionsPage';
+import { getDefaultPageForRole, hasAccess } from './utils/permissions';
 
-function App() {
+const PAGE_TITLES = {
+  overview: 'Tổng quan bãi đỗ xe',
+  history: 'Lịch sử xe vào / ra',
+  'resident-cards': 'Quản lý thẻ cư dân',
+  'guest-cards': 'Quản lý thẻ khách vãng lai',
+  'gate-ops': 'Vận hành & Xác thực cổng RFID',
+  devices: 'Theo dõi trạng thái thiết bị',
+  reports: 'Báo cáo hoạt động bãi xe',
+  accounts: 'Quản lý tài khoản',
+  permissions: 'Phân quyền người dùng'
+};
+
+function AppContent() {
+  const { currentUser } = useAuth();
+  const [activePage, setActivePage] = useState('overview');
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      if (!hasAccess(currentUser.role, activePage)) {
+        setActivePage(getDefaultPageForRole(currentUser.role));
+      }
+    }
+  }, [currentUser, activePage]);
+
+  if (!currentUser) {
+    return <LoginPage />;
+  }
+
+  const renderPage = () => {
+    switch (activePage) {
+      case 'overview':
+        return <OverviewPage />;
+      case 'history':
+        return <HistoryPage />;
+      case 'resident-cards':
+        return <ResidentCardsPage />;
+      case 'guest-cards':
+        return <GuestCardsPage />;
+      case 'gate-ops':
+        return <GateOperationsPage />;
+      case 'devices':
+        return <DevicesPage />;
+      case 'reports':
+        return <ReportsPage />;
+      case 'accounts':
+        return <AccountsPage />;
+      case 'permissions':
+        return <PermissionsPage />;
+      default:
+        return <OverviewPage />;
+    }
+  };
+
   return (
-    <ParkingProvider>
-      <div className="min-h-screen bg-slate-900 flex flex-col">
-        <Navbar />
-        
-        <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
-          {/* Hàng 1: Sơ đồ bãi xe & Điều khiển thanh chắn */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <ParkingMap />
-            </div>
-            <div>
-              <BarrierControl />
-            </div>
-          </div>
+    <div className="app-shell">
+      <Sidebar
+        activePage={activePage}
+        onSelectPage={setActivePage}
+        mobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
+      />
 
-          {/* Hàng 2: Quản lý thẻ RFID & Lịch sử xe vào ra */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <CardList />
-            <LogTable />
-          </div>
-        </main>
-
-        <footer className="bg-slate-950 border-t border-slate-800 text-center py-4 text-xs text-slate-500">
-          IoT Smart Parking System © 2026 · Kiến trúc 4 lớp ESP32 - Router - Firebase - React
-        </footer>
+      <div className="main-wrapper">
+        <Topbar
+          title={PAGE_TITLES[activePage] || 'Smart Parking'}
+          onOpenMobile={() => setMobileOpen((prev) => !prev)}
+        />
+        <main className="main-content">{renderPage()}</main>
       </div>
-    </ParkingProvider>
+    </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <AuthProvider>
+      <ParkingProvider>
+        <AppContent />
+      </ParkingProvider>
+    </AuthProvider>
+  );
+}
