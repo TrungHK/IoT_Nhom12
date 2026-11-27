@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { ref, onValue, set, push, update, remove } from 'firebase/database';
-import { db } from '../config/firebase';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { apiClient } from '../services/apiClient';
+import { useAuth } from './AuthContext';
 import { ROLES } from '../utils/permissions';
 
 const ParkingContext = createContext(null);
@@ -79,6 +79,7 @@ const INITIAL_USERS = {
 };
 
 export const ParkingProvider = ({ children }) => {
+  const { currentUser } = useAuth();
   const [parkingStatus, setParkingStatus] = useState({
     availableSlots: 2,
     totalSlots: 4,
@@ -88,6 +89,8 @@ export const ParkingProvider = ({ children }) => {
   const [logs, setLogs] = useState(INITIAL_LOGS);
   const [cards, setCards] = useState(INITIAL_CARDS);
   const [users, setUsers] = useState(INITIAL_USERS);
+  const [reportSummary, setReportSummary] = useState(null);
+  const [backendConnected, setBackendConnected] = useState(true);
   const [devices, setDevices] = useState({
     esp32Online: true,
     wifiRssi: -58,
@@ -99,42 +102,79 @@ export const ParkingProvider = ({ children }) => {
     lcdStatus: 'OK'
   });
 
-  useEffect(() => {
-    const statusRef = ref(db, 'parking/status');
-    const unsubStatus = onValue(statusRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) setParkingStatus(data);
-    });
+  // Đồng bộ dữ liệu từ Backend API
+  const syncFromBackend = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      const role = currentUser.role;
+      const tasks = [];
 
-    const logsRef = ref(db, 'parking/logs');
-    const unsubLogs = onValue(logsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const arr = Object.keys(data).map((k) => ({ id: k, ...data[k] })).reverse();
-        setLogs(arr);
+      if (role === ROLES.MANAGER || role === ROLES.STAFF) {
+        tasks.push(
+          apiClient.getParkingStatus().then((res) => {
+            if (res?.data) setParkingStatus(res.data);
+          }),
+          apiClient.getParkingLogs({ page: 1, limit: 50 }).then((res) => {
+            if (Array.isArray(res?.data)) setLogs(res.data);
+            else if (res?.data && typeof res.data === 'object') {
+              const arr = Object.entries(res.data).map(([id, item]) => ({ id, ...item })).reverse();
+              setLogs(arr);
+            }
+          })
+        );
       }
-    });
 
-    const cardsRef = ref(db, 'parking/cards');
-    const unsubCards = onValue(cardsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) setCards(data);
-    });
+      if (role === ROLES.MANAGER) {
+        tasks.push(
+          apiClient.getCards().then((res) => {
+            if (res?.data) setCards(res.data);
+          }),
+          apiClient.getReportSummary().then((res) => {
+            if (res?.data) setReportSummary(res.data);
+          })
+        );
+      }
 
-    const usersRef = ref(db, 'parking/users');
-    const unsubUsers = onValue(usersRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) setUsers(data);
-    });
+      if (role === ROLES.ADMIN) {
+        tasks.push(
+          apiClient.getUsers().then((res) => {
+            if (Array.isArray(res?.data)) {
+              const map = {};
+              res.data.forEach((u) => {
+                map[u.uid] = u;
+              });
+              setUsers(map);
+            }
+          })
+        );
+      }
 
-    return () => {
-      unsubStatus();
-      unsubLogs();
-      unsubCards();
-      unsubUsers();
-    };
-  }, []);
+      await Promise.allSettled(tasks);
+      setBackendConnected(true);
+    } catch {
+      setBackendConnected(false);
+    }
+  }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser) return;
+    syncFromBackend();
+
+    const interval = setInterval(() => {
+      if (currentUser.role === ROLES.MANAGER || currentUser.role === ROLES.STAFF) {
+        apiClient.getParkingStatus()
+          .then((res) => {
+            if (res?.data) setParkingStatus(res.data);
+            setBackendConnected(true);
+          })
+          .catch(() => {});
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [currentUser, syncFromBackend]);
+
+  // UC07 & UC09: Đăng ký thẻ cư dân / Cấp thẻ RFID tạm thời qua Backend API
   const upsertCard = async (cardData) => {
     const uid = cardData.uid.trim().toUpperCase();
     const payload = {
@@ -147,25 +187,27 @@ export const ParkingProvider = ({ children }) => {
 
     setCards((prev) => ({ ...prev, [uid]: payload }));
     try {
-      await set(ref(db, `parking/cards/${uid}`), payload);
+      await apiClient.upsertCard(payload);
     } catch {
-      // Offline fallback
+      // Fallback local state nếu BE trả 401/503 trong chế độ demo
     }
     return payload;
   };
 
+  // Khóa / mở khóa thẻ qua Backend API
   const toggleCardStatus = async (uid) => {
     const current = cards[uid];
     if (!current) return;
     const newStatus = current.status === 'active' ? 'blocked' : 'active';
     setCards((prev) => ({ ...prev, [uid]: { ...prev[uid], status: newStatus } }));
     try {
-      await update(ref(db, `parking/cards/${uid}`), { status: newStatus, updatedAt: Date.now() });
+      await apiClient.toggleCard(uid);
     } catch {
-      // Offline fallback
+      // Fallback local state
     }
   };
 
+  // Xóa thẻ qua Backend API
   const deleteCard = async (uid) => {
     setCards((prev) => {
       const copy = { ...prev };
@@ -173,12 +215,13 @@ export const ParkingProvider = ({ children }) => {
       return copy;
     });
     try {
-      await remove(ref(db, `parking/cards/${uid}`));
+      await apiClient.deleteCard(uid);
     } catch {
-      // Offline fallback
+      // Fallback local state
     }
   };
 
+  // Điều khiển thanh chắn qua Backend API: POST /api/parking/barrier
   const triggerBarrier = async (gate, action = 'OPEN') => {
     setDevices((prev) => ({
       ...prev,
@@ -195,17 +238,13 @@ export const ParkingProvider = ({ children }) => {
     }
 
     try {
-      await set(ref(db, 'parking/commands/barrier'), {
-        gate,
-        action,
-        triggerAt: Date.now(),
-        by: 'WebApp'
-      });
+      await apiClient.triggerBarrier(gate, action);
     } catch {
-      // Offline fallback
+      // Fallback local state
     }
   };
 
+  // UC10 & UC11: Xác thực thẻ RFID & Ghi nhận xe vào/ra (qua Backend)
   const verifyAndRecordGateEvent = async (rawUid, gate) => {
     const uid = rawUid.trim().toUpperCase();
     const card = cards[uid];
@@ -231,44 +270,50 @@ export const ParkingProvider = ({ children }) => {
       timestamp: Date.now()
     };
 
-    const newId = `log-${Date.now()}`;
-    setLogs((prev) => [{ id: newId, ...logEntry }, ...prev]);
-
-    try {
-      await push(ref(db, 'parking/logs'), logEntry);
-    } catch {
-      // Offline fallback
-    }
-
+    setLogs((prev) => [{ id: `log-${Date.now()}`, ...logEntry }, ...prev]);
     await triggerBarrier(gate, 'OPEN');
 
     return {
       valid: true,
       card,
       logEntry,
-      message: `Xác thực thành công! Đã mở cổng ${gate === 'entry' ? 'VÀO' : 'RA'} cho xe ${card.licensePlate || uid}.`
+      message: `Xác thực thành công! Đã gửi lệnh mở cổng ${gate === 'entry' ? 'VÀO' : 'RA'} qua Backend cho xe ${card.licensePlate || uid}.`
     };
   };
 
-  const upsertUser = async (userData) => {
-    const uid = userData.uid || `user-${Date.now()}`;
-    const payload = {
-      uid,
+  // UC14 & UC15: Quản lý tài khoản & Phân quyền qua Backend API
+  const createUserAccount = async (userData) => {
+    const tempUid = `user-${Date.now()}`;
+    const localProfile = {
+      uid: tempUid,
       fullName: userData.fullName,
       email: userData.email,
       role: userData.role || ROLES.STAFF,
-      status: userData.status || 'active',
-      createdAt: userData.createdAt || Date.now(),
-      updatedAt: Date.now()
+      status: 'active',
+      createdAt: Date.now()
     };
 
-    setUsers((prev) => ({ ...prev, [uid]: payload }));
     try {
-      await set(ref(db, `parking/users/${uid}`), payload);
+      const res = await apiClient.createUser(userData);
+      const created = res?.data || localProfile;
+      setUsers((prev) => ({ ...prev, [created.uid]: created }));
+      return created;
     } catch {
-      // Offline fallback
+      setUsers((prev) => ({ ...prev, [tempUid]: localProfile }));
+      return localProfile;
     }
-    return payload;
+  };
+
+  const updateUserAccount = async (uid, updates) => {
+    setUsers((prev) => ({
+      ...prev,
+      [uid]: { ...prev[uid], ...updates, updatedAt: Date.now() }
+    }));
+    try {
+      await apiClient.updateUser(uid, updates);
+    } catch {
+      // Fallback local state
+    }
   };
 
   const deleteUser = async (uid) => {
@@ -278,9 +323,9 @@ export const ParkingProvider = ({ children }) => {
       return copy;
     });
     try {
-      await remove(ref(db, `parking/users/${uid}`));
+      await apiClient.deleteUser(uid);
     } catch {
-      // Offline fallback
+      // Fallback local state
     }
   };
 
@@ -291,12 +336,16 @@ export const ParkingProvider = ({ children }) => {
       cards,
       users,
       devices,
+      reportSummary,
+      backendConnected,
+      syncFromBackend,
       upsertCard,
       toggleCardStatus,
       deleteCard,
       triggerBarrier,
       verifyAndRecordGateEvent,
-      upsertUser,
+      createUserAccount,
+      updateUserAccount,
       deleteUser
     }}>
       {children}

@@ -1,8 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { ref, get } from 'firebase/auth';
-import { ref as dbRef, get as dbGet } from 'firebase/database';
-import { auth, db } from '../config/firebase';
+import { apiClient, getAuthToken, setAuthToken } from '../services/apiClient';
 import { ROLES, ROLE_LABELS } from '../utils/permissions';
 
 const AuthContext = createContext(null);
@@ -39,68 +36,57 @@ export const AuthProvider = ({ children }) => {
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
-    // Lắng nghe trạng thái Firebase Auth nếu có sử dụng Firebase thật
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        try {
-          const snapshot = await dbGet(dbRef(db, `parking/users/${fbUser.uid}`));
-          const userData = snapshot.val();
-          const merged = {
-            uid: fbUser.uid,
-            email: fbUser.email,
-            fullName: userData?.fullName || fbUser.email.split('@')[0],
-            role: userData?.role || ROLES.STAFF,
-            status: userData?.status || 'active'
-          };
-          setCurrentUser(merged);
-          localStorage.setItem('sp_current_user', JSON.stringify(merged));
-        } catch {
-          // Fallback nếu chưa có RTDB rules
-        }
-      }
-    });
-    return () => unsubscribe();
+    const token = getAuthToken();
+    if (token && !token.startsWith('demo-token-')) {
+      apiClient
+        .getMe()
+        .then((res) => {
+          if (res?.data) {
+            setCurrentUser(res.data);
+            localStorage.setItem('sp_current_user', JSON.stringify(res.data));
+          }
+        })
+        .catch(() => {
+          // Giữ trạng thái hiện tại nếu token chưa hợp lệ hoặc BE chưa cấu hình Firebase
+        });
+    }
   }, []);
 
-  // UC01: Đăng nhập hệ thống
-  const login = async (email, password) => {
+  // UC01: Đăng nhập hệ thống qua Backend hoặc tài khoản Demo
+  const login = async (email, password, idToken = '') => {
     setAuthLoading(true);
     try {
-      const normalizedEmail = email.trim().toLowerCase();
+      // Nếu người dùng nhập Firebase ID Token trực tiếp để xác thực với Backend
+      if (idToken.trim()) {
+        setAuthToken(idToken.trim());
+        const res = await apiClient.getMe();
+        if (res?.data) {
+          setCurrentUser(res.data);
+          localStorage.setItem('sp_current_user', JSON.stringify(res.data));
+          return { success: true, user: res.data };
+        }
+      }
 
-      // 1. Kiểm tra tài khoản Demo / Local trước (thuận tiện khi chạy đồ án offline/chưa gắn key)
+      const normalizedEmail = email.trim().toLowerCase();
       if (DEMO_USERS[normalizedEmail] && password === '123456') {
         const userObj = DEMO_USERS[normalizedEmail];
+        setAuthToken(`demo-token-${userObj.role}`);
         setCurrentUser(userObj);
         localStorage.setItem('sp_current_user', JSON.stringify(userObj));
+        // Gọi /api/auth/me để đồng bộ với Backend
+        apiClient.getMe().catch(() => {});
         return { success: true, user: userObj };
       }
 
-      // 2. Đăng nhập qua Firebase Authentication thật
-      const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password);
-      const fbUser = credential.user;
-      const snapshot = await dbGet(dbRef(db, `parking/users/${fbUser.uid}`));
-      const userData = snapshot.val();
-
-      if (userData?.status === 'locked') {
-        await signOut(auth);
-        return { success: false, message: 'Tài khoản đã bị khóa bởi Quản trị viên.' };
-      }
-
-      const userObj = {
-        uid: fbUser.uid,
-        email: fbUser.email,
-        fullName: userData?.fullName || fbUser.email,
-        role: userData?.role || ROLES.STAFF,
-        status: 'active'
-      };
-      setCurrentUser(userObj);
-      localStorage.setItem('sp_current_user', JSON.stringify(userObj));
-      return { success: true, user: userObj };
-    } catch (error) {
       return {
         success: false,
-        message: 'Email hoặc mật khẩu không chính xác. (Demo: dùng mật khẩu 123456)'
+        message: 'Email hoặc mật khẩu không đúng. (Demo: dùng mật khẩu 123456 hoặc dùng nút Đăng nhập nhanh)'
+      };
+    } catch (error) {
+      setAuthToken('');
+      return {
+        success: false,
+        message: error.message || 'Không thể xác thực với Backend.'
       };
     } finally {
       setAuthLoading(false);
@@ -114,17 +100,15 @@ export const AuthProvider = ({ children }) => {
       [ROLES.ADMIN]: 'admin@smartparking.vn'
     };
     const userObj = DEMO_USERS[emailMap[role]];
+    setAuthToken(`demo-token-${role}`);
     setCurrentUser(userObj);
     localStorage.setItem('sp_current_user', JSON.stringify(userObj));
+    apiClient.getMe().catch(() => {});
     return userObj;
   };
 
-  const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch {
-      // Ignore if offline
-    }
+  const logout = () => {
+    setAuthToken('');
     setCurrentUser(null);
     localStorage.removeItem('sp_current_user');
   };

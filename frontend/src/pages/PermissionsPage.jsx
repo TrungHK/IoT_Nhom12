@@ -17,16 +17,15 @@ const USE_CASE_MATRIX = [
 ];
 
 export default function PermissionsPage() {
-  const { users, upsertUser } = useParking();
+  const { users, updateUserAccount } = useParking();
   const userList = Object.values(users || {});
 
   const handleRoleChange = async (user, newRole) => {
-    await upsertUser({ ...user, role: newRole });
+    await updateUserAccount(user.uid, { role: newRole });
   };
 
   return (
     <div className="stack-lg">
-      {/* Phân quyền trực tiếp trên từng tài khoản */}
       <div className="card">
         <div className="card-header">
           <div>
@@ -35,7 +34,7 @@ export default function PermissionsPage() {
               <span>UC15 · Phân quyền người dùng</span>
             </div>
             <div className="card-subtitle">
-              Gán hoặc thay đổi vai trò cho từng tài khoản trong hệ thống
+              Gán hoặc thay đổi vai trò qua Backend API (PATCH /api/users/:uid)
             </div>
           </div>
         </div>
@@ -76,7 +75,6 @@ export default function PermissionsPage() {
         </div>
       </div>
 
-      {/* Ma trận phân quyền theo Use Case */}
       <div className="card">
         <div className="card-header">
           <div>

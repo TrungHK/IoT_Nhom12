@@ -1,9 +1,9 @@
 import React from 'react';
-import { Menu, Wifi, Database } from 'lucide-react';
+import { Menu, Wifi, Server } from 'lucide-react';
 import { useParking } from '../../context/ParkingContext';
 
 export default function Topbar({ title, onOpenMobile }) {
-  const { devices } = useParking();
+  const { devices, backendConnected } = useParking();
 
   return (
     <header className="topbar">
@@ -21,8 +21,9 @@ export default function Topbar({ title, onOpenMobile }) {
           <span>ESP32 {devices.esp32Online ? 'Online' : 'Offline'}</span>
         </div>
         <div className="status-pill">
-          <Database size={14} color="#60a5fa" />
-          <span>Firebase RTDB</span>
+          <span className={`dot ${backendConnected ? 'dot-online' : 'dot-offline'}`} />
+          <Server size={14} color="#60a5fa" />
+          <span>Backend API</span>
         </div>
       </div>
     </header>

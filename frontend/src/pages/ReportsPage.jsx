@@ -3,13 +3,13 @@ import { BarChart3, Download, Users, Car } from 'lucide-react';
 import { useParking } from '../context/ParkingContext';
 
 export default function ReportsPage() {
-  const { logs, cards, parkingStatus } = useParking();
+  const { logs, cards, parkingStatus, reportSummary } = useParking();
 
-  const totalIn = logs.filter((l) => l.action === 'IN' || l.gate === 'entry').length;
-  const totalOut = logs.filter((l) => l.action === 'OUT' || l.gate === 'exit').length;
+  const totalIn = reportSummary?.traffic?.entries ?? logs.filter((l) => l.action === 'IN' || l.gate === 'entry').length;
+  const totalOut = reportSummary?.traffic?.exits ?? logs.filter((l) => l.action === 'OUT' || l.gate === 'exit').length;
   const cardValues = Object.values(cards || {});
-  const residentCount = cardValues.filter((c) => (c.cardType || 'resident') === 'resident').length;
-  const guestCount = cardValues.filter((c) => c.cardType === 'guest').length;
+  const residentCount = reportSummary?.cards?.resident ?? cardValues.filter((c) => (c.cardType || 'resident') === 'resident').length;
+  const guestCount = reportSummary?.cards?.guest ?? cardValues.filter((c) => c.cardType === 'guest').length;
 
   const exportCsv = () => {
     const header = 'Thoi gian,Cong,UID,Loai the,Bien so,Hanh dong\n';
@@ -42,7 +42,7 @@ export default function ReportsPage() {
               <BarChart3 size={20} color="#60a5fa" />
               <span>UC13 · Báo cáo hoạt động bãi đỗ xe</span>
             </div>
-            <div className="card-subtitle">Tổng hợp lưu lượng xe vào/ra, tỷ lệ thẻ cư dân & khách vãng lai</div>
+            <div className="card-subtitle">Tổng hợp lưu lượng xe vào/ra từ Backend API (/api/reports/summary)</div>
           </div>
           <button className="btn btn-primary" onClick={exportCsv}>
             <Download size={16} />
@@ -81,7 +81,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* Biểu đồ thanh trực quan bằng Pure CSS */}
         <div style={{
           padding: 20,
           borderRadius: 'var(--radius-md)',

@@ -4,11 +4,12 @@ import { useParking } from '../context/ParkingContext';
 import { ROLES, ROLE_LABELS } from '../utils/permissions';
 
 export default function AccountsPage() {
-  const { users, upsertUser, deleteUser } = useParking();
+  const { users, createUserAccount, updateUserAccount, deleteUser } = useParking();
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
     fullName: '',
     email: '',
+    password: '',
     role: ROLES.STAFF
   });
 
@@ -17,19 +18,19 @@ export default function AccountsPage() {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     if (!form.fullName.trim() || !form.email.trim()) return;
-    await upsertUser({
-      ...form,
-      status: 'active'
+    await createUserAccount({
+      fullName: form.fullName.trim(),
+      email: form.email.trim(),
+      password: form.password || '12345678',
+      role: form.role
     });
-    setForm({ fullName: '', email: '', role: ROLES.STAFF });
+    setForm({ fullName: '', email: '', password: '', role: ROLES.STAFF });
     setShowModal(false);
   };
 
   const toggleLock = async (user) => {
-    await upsertUser({
-      ...user,
-      status: user.status === 'active' ? 'locked' : 'active'
-    });
+    const newStatus = user.status === 'active' ? 'locked' : 'active';
+    await updateUserAccount(user.uid, { status: newStatus });
   };
 
   return (
@@ -42,7 +43,7 @@ export default function AccountsPage() {
               <span>UC14 · Quản lý tài khoản hệ thống</span>
             </div>
             <div className="card-subtitle">
-              Tạo mới, khóa/mở khóa và xóa tài khoản người vận hành phần mềm
+              Gọi API Backend (/api/users) để tạo mới, khóa/mở khóa và xóa tài khoản
             </div>
           </div>
 
@@ -128,6 +129,18 @@ export default function AccountsPage() {
                   className="form-control"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Mật khẩu khởi tạo (tối thiểu 8 ký tự) *</label>
+                <input
+                  type="password"
+                  className="form-control"
+                  minLength={8}
+                  placeholder="Tối thiểu 8 ký tự"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
                   required
                 />
               </div>
