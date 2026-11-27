@@ -4,8 +4,8 @@
 // ==========================================
 // CẤU HÌNH WI-FI (Gateway Layer)
 // ==========================================
-#define WIFI_SSID           "SmartParking_AP"
-#define WIFI_PASSWORD       "12345678"
+#define WIFI_SSID           "OPPO A58"
+#define WIFI_PASSWORD       "123456789"
 
 // ==========================================
 // CẤU HÌNH MQTT BROKER (Cloud / Bridge Layer)
